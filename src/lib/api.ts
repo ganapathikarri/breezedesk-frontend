@@ -61,13 +61,6 @@ export const unwrap = <T>(response: ApiResponse<T> | T): T => {
   return response
 }
 
-export const getApiErrorMessage = (error: unknown, fallback = 'Something went wrong') => {
-  if (axios.isAxiosError(error)) {
-    const data = error.response?.data as Partial<ApiResponse<unknown>> | { message?: string; error?: string } | undefined
-    return data?.message || ('error' in (data ?? {}) ? (data as { error?: string }).error : undefined) || error.message || fallback
-  }
-  return error instanceof Error ? error.message : fallback
-}
 
 const clearSession = () => {
   localStorage.removeItem(ACCESS_TOKEN_KEY)
@@ -120,6 +113,54 @@ const get = async <T>(url: string, config?: AxiosRequestConfig) => unwrap((await
 const post = async <T, B = unknown>(url: string, body?: B, config?: AxiosRequestConfig) => unwrap((await api.post<ApiResponse<T>>(url, body, config)).data)
 const patch = async <T, B = unknown>(url: string, body?: B, config?: AxiosRequestConfig) => unwrap((await api.patch<ApiResponse<T>>(url, body, config)).data)
 const del = async <T>(url: string, config?: AxiosRequestConfig) => unwrap((await api.delete<ApiResponse<T>>(url, config)).data)
+
+const toErrorText = (value: unknown): string | null => {
+  if (typeof value === 'string') {
+    const text = value.trim()
+    return text || null
+  }
+
+  if (Array.isArray(value)) {
+    const messages = value
+      .map(toErrorText)
+      .filter((message): message is string => Boolean(message))
+
+    return messages.length > 0 ? messages.join(', ') : null
+  }
+
+  if (value && typeof value === 'object') {
+    const messages = Object.values(value)
+      .map(toErrorText)
+      .filter((message): message is string => Boolean(message))
+
+    return messages.length > 0 ? messages.join(', ') : null
+  }
+
+  if (typeof value === 'number' || typeof value === 'boolean') {
+    return String(value)
+  }
+
+  return null
+}
+
+export const getApiErrorMessage = (
+  error: unknown,
+  fallback = 'Something went wrong',
+): string => {
+  if (axios.isAxiosError(error)) {
+    const data = error.response?.data as Record<string, unknown> | undefined
+
+    return (
+      toErrorText(data?.message) ||
+      toErrorText(data?.errors) ||
+      toErrorText(data?.error) ||
+      error.message ||
+      fallback
+    )
+  }
+
+  return error instanceof Error ? error.message : fallback
+}
 
 export const authApi = {
   login: (payload: LoginRequest) => post<AuthResponseDTO, LoginRequest>('/auth/login', payload),
